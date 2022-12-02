@@ -5,6 +5,7 @@ import Telegraf from 'telegraf';
 import Markup from 'telegraf';
 import minimist from 'minimist';
 import fs from 'fs';
+import axios from 'axios';
 
 // Load in Solana RPC URLs and API keys
 var args = minimist(process.argv.slice(2));
@@ -91,8 +92,9 @@ var assetMint = new Array();
 var assetInformation = new Array();
 var assetCheapest_total_USDC_price_current = new Array();
 var assetCheapest_total_ATLAS_price_current = new Array();
-
 var tokenAddressLength = tokenAddress.length;
+
+// Runs when Telegram Bot /start and /modify
 for (var i = 0; i < tokenAddressLength; i++) {
     assetMint.push(new PublicKey(tokenAddress[i]));
     assetInformation.push(allAssetInformation.filter((nft) => nft.mint === tokenAddress[i]));
@@ -121,14 +123,16 @@ var assetCheapest_total_ATLAS_price;
 var startTest;
 var notificationText_telegram;
 var notificationText_console;
-var assetMintLength = assetMint.length;
+var assetMintLength;
 var chatID;
 var scanManager;
 var checkAliveManager;
 var globalCounter = 0;
+var request;
 
 // Functions
-function begin_bot(){
+function begin_bot(ctx){
+    teleBot.telegram.sendMessage(ctx.chat.id, "Tracking starts now...", { parse_mode: 'HTML' });
     console.log(getDateTime() + ' Timer starts');
     scanManager = setInterval(scan, 30 * 1000);                             // check every 30 sec
     checkAliveManager = setInterval(checkAlive, 6 * 60 * 60 * 1000);        // check every 6 hours
@@ -152,13 +156,66 @@ function getDateTime(){
     return date_str;
 }
 
-async function checkAlive() {
-    teleBot.telegram.sendMessage(chatID, 'Price Tracker is still functioning...', { parse_mode: 'HTML' })
+function checkAlive() {
+    teleBot.telegram.sendMessage(chatID, 'Price Tracker is still functioning...', { parse_mode: 'HTML' });
+}
+
+function listAssetTracked(ctx) {
+    assetMintLength = assetMint.length;
+    notificationText_telegram = 'The assets that are currently being tracked:\n\n';
+    for (var i = 0; i < assetMintLength; i++) {
+        notificationText_telegram = notificationText_telegram + '- <i>' + assetInformation[i][0]['name'] + '</i>\n';
+    }
+    teleBot.telegram.sendMessage(ctx.chat.id, notificationText_telegram, { parse_mode: 'HTML' });
+}
+
+function modifyAssetTrack(ctx) {
+
+    teleBot.telegram.sendMessage(ctx.chat.id, 'Select the options below.', {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    {
+                        text: "Add asset to track",
+                        callback_data: 'add'
+                    },
+                    {
+                        text: "Remove asset from tracking",
+                        callback_data: 'remove'
+                    },
+                    {
+                        text: "Exit",
+                        callback_data: 'exit'
+                    }
+                ],
+
+            ]
+        }
+    })
+}
+
+function help(ctx) {
+
+    teleBot.telegram.sendMessage(ctx.chat.id, 'A list of available commands and their description:\n\n' + 
+                                              '- <i><u>/start</u></i>: Re-initialise tracking and list assets being tracked\n' +
+                                              '- <i><u>/list</u></i>: List assets being tracked\n' +
+                                              '- <i><u>/modify</u></i>: Modify assets to be tracked\n' +
+                                              '- <i><u>/help</u></i>: To show this message...', { parse_mode: 'HTML' });
+}
+
+function addAsset(inputToken) {
+
+}
+
+function removeAsset(inputToken) {
+    
 }
 
 // get open orders for selected assets in Star Atlas Galactic Marketplace (price in ascending order)
 async function scan () {
     globalCounter = globalCounter + 1;
+
+    assetMintLength = assetMint.length;
 
     try {
         for (var i = 0; i < assetMintLength; i++) {
@@ -312,9 +369,127 @@ process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 // Telegram Bot /start
-teleBot.start((ctx) => ctx.reply('Hello! I am Star Atlas Galactic Marketplace Asset Price Tracker!\n\nTracking starts now...')
-  .then(() => chatID = ctx.chat.id)
-  .then(() => console.log('Tracker has started...'))
-  .then(() => console.log('The chat ID in use is ' + String(chatID) + '.'))
-  .then(() => begin_bot())
+teleBot.start((ctx) => 
+    ctx.reply("Hello! I am Star Atlas Galactic Marketplace Asset Price Tracker!\n\nPlease use <i><u>/help</u></i> to see the available commands and their description.", {parse_mode: 'HTML'})
+    .then(() => chatID = ctx.chat.id)
+    .then(() => listAssetTracked(ctx))
+    .then(() => console.log('Tracker has started...'))
+    .then(() => console.log('The chat ID in use is ' + String(chatID) + '.'))
+    .then(() => begin_bot(ctx))
+);
+
+// Telegram Bot /list
+teleBot.command('list', ctx => {
+    listAssetTracked(ctx)
+});
+
+// Telegram Bot /modify
+teleBot.command('modify', ctx => {
+    modifyAssetTrack(ctx)
+});
+
+// Telegram Bot /help
+teleBot.command('help', ctx => {
+    help(ctx)
+});
+
+// Telegram Bot /test
+teleBot.command('help', ctx => {
+    console.log(ctx.update.message.text);
+});
+
+// Telegram Bot action for callback_data 'add' 
+teleBot.action('add', async ctx => {
+    ctx.deleteMessage();
+    teleBot.telegram.sendMessage(chatID, 'Use the command below to add asset to track: \n' +
+                                         "add <i>Star Atlas Galactic Marketplace URL or token address of the asset to track</i>.\n\n" +
+                                         'eg.\n' +
+                                         'add https://play.staratlas.com/market/DsJHgpnNovjJ981QJJnqMggexAekNawbSavfV1QuTpis\n' +
+                                         'or\n' +
+                                         'add DsJHgpnNovjJ981QJJnqMggexAekNawbSavfV1QuTpis\n\n' +
+                                         "To go back to the previous menu, click on the <i><b>Back</b></i> button.\n" +
+                                         "To exit, click on the <i><b>Exit</b></i> button.\n", 
+        {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        {
+                            text: "Back",
+                            callback_data: 'back'
+                        },
+                        {
+                            text: "Exit",
+                            callback_data: 'exit'
+                        }
+                    ],
+
+                ]
+            }, parse_mode: 'HTML'
+        })
+    }
 )
+
+teleBot.on('message', (ctx) => {
+    var messageArray = ctx.message.text.split(' ');
+    if (messageArray[0] == 'add') {
+        var inputToken = messageArray[1].split('/').slice(-1);
+        var checkAsset = allAssetInformation.filter((nft) => nft.mint === inputToken[0]);
+        if (checkAsset.length != 0) {
+            addAsset(inputToken[0]);
+        } else {
+            teleBot.telegram.sendMessage(chatID, "No such asset found... Please check the token address again...", { parse_mode: 'HTML' });
+        }
+
+    } else if (messageArray[0] == 'remove') {
+        var inputToken = messageArray[1].split('/').slice(-1);
+        if (assetMint.includes(inputToken[0])) {
+            removeAsset(inputToken[0]);
+        } else {
+            teleBot.telegram.sendMessage(chatID, "This asset is not being tracked... Please check the token address again...", { parse_mode: 'HTML' });
+        }
+    }
+})
+
+// Telegram Bot action for callback_data 'remove' 
+teleBot.action('remove', ctx => {
+    ctx.deleteMessage();
+    teleBot.telegram.sendMessage(chatID, 'Use the command below to remove asset from tracking: \n' +
+                                         "remove <i>Star Atlas Galactic Marketplace URL or token address of the asset to track</i>.\n\n" +
+                                         'eg.\n' +
+                                         'remove https://play.staratlas.com/market/DsJHgpnNovjJ981QJJnqMggexAekNawbSavfV1QuTpis\n' +
+                                         'or\n' +
+                                         'remove DsJHgpnNovjJ981QJJnqMggexAekNawbSavfV1QuTpis\n\n' +
+                                         "To go back to the previous menu, click on the <i><b>Back</b></i> button.\n" +
+                                         "To exit, click on the <i><b>Exit</b></i> button.\n", 
+        {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        {
+                            text: "Back",
+                            callback_data: 'back'
+                        },
+                        {
+                            text: "Exit",
+                            callback_data: 'exit'
+                        }
+                    ],
+
+                ]
+            }, parse_mode: 'HTML'
+        })
+    }
+)
+
+// Telegram Bot action for callback_data 'exit' 
+teleBot.action('exit', ctx => {
+    ctx.deleteMessage();
+    ctx.reply('No modification made.');
+
+})
+
+// Telegram Bot action for callback_data 'back' 
+teleBot.action('back', ctx => {
+    ctx.deleteMessage();
+    modifyAssetTrack(ctx);
+})
