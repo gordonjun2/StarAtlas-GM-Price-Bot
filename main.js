@@ -12,12 +12,12 @@ var args = minimist(process.argv.slice(2));
 var privateInfo;
 
 try {
-  privateInfo = JSON.parse(
-      fs.readFileSync(`./${args.f || 'private.json'}`, "utf8")
-  );
+    privateInfo = JSON.parse(
+        fs.readFileSync(`./${args.f || 'private.json'}`, "utf8")
+    );
 } catch {
-  console.log(`The file ${args.f || 'private.json'} has not been found.\nExiting process...`);
-  process.exit(0);
+    console.log(`The file ${args.f || 'private.json'} has not been found.\nExiting process...`);
+    process.exit(0);
 }
 
 const rpcURL = privateInfo.rpcURL;
@@ -28,11 +28,31 @@ const teleAPIKey = privateInfo.teleAPIKey;
 // const connection_mainnet = "https://api.devnet.solana.com";
 // const connection_genesysgo = "https://ssc-dao.genesysgo.net/";
 
-try {
-    var connection = new Connection(rpcURL);
-} catch {
-    console.log(`Something is wrong with the RPC URL provided...\nExiting process...`);
-    process.exit(0);
+var multipleRPC_flag = 0;
+
+if (Array.isArray(rpcURL)) {
+    multipleRPC_flag = 1;
+    var connections = new Array();
+    var rpcURL_temp;
+    for (var i = 0; i < rpcURL.length; i++) {
+        try {
+            rpcURL_temp = new Connection(rpcURL[i]);
+            connections.push(rpcURL_temp);
+        } catch {
+            continue;
+        }
+    }
+    if (connections.length == 0) {
+        console.log(`Something is wrong with the RPC URLs provided...\nExiting process...`);
+        process.exit(0);
+    }
+} else {
+    try {
+        var connection = new Connection(rpcURL);
+    } catch {
+        console.log(`Something is wrong with the RPC URL provided...\nExiting process...`);
+        process.exit(0);
+    }
 }
 
 // Star Atlas Galactic Marketplace Program ID
@@ -84,7 +104,7 @@ for (var i = 0; i < tokenAddressLength; i++) {
 try {
     var teleBot = new Telegraf(teleAPIKey);
 } catch {
-    console.log(`Something is wrong with the Telegram Bot API key provided...\n Exiting process...`);
+    console.log(`Something is wrong with the Telegram Bot API key provided...\nExiting process...`);
     process.exit(0);
 }
 
@@ -105,6 +125,7 @@ var assetMintLength = assetMint.length;
 var chatID;
 var scanManager;
 var checkAliveManager;
+var globalCounter = 0;
 
 // Functions
 function begin_bot(){
@@ -137,6 +158,8 @@ async function checkAlive() {
 
 // get open orders for selected assets in Star Atlas Galactic Marketplace (price in ascending order)
 async function scan () {
+    globalCounter = globalCounter + 1;
+
     try {
         for (var i = 0; i < assetMintLength; i++) {
 
@@ -146,25 +169,55 @@ async function scan () {
             assetCheapest_ATLAS_price = null;
             assetCheapest_ATLAS_to_USDC_price = null;
 
-            assetSellOrder_USDC = (await gmClientService.getOpenOrdersForAsset(
-                connection,
-                assetMint[i],
-                programId,
-                )).filter(
-                    (order) => order.currencyMint === usdcTokenMint && order.orderType === "sell"
-                ).sort(
-                    (a, b) => (a.price.toNumber() / DECIMALS_usdc < b.price.toNumber() / DECIMALS_usdc ? -1 : 1)
-                );
+            if (multipleRPC_flag == 1) {
+                connection = connections[globalCounter % connections.length];
+            }
 
-            assetSellOrder_ATLAS = (await gmClientService.getOpenOrdersForAsset(
-                connection,
-                assetMint[i],
-                programId,
-                )).filter(
-                    (order) => order.currencyMint === atlasTokenMint && order.orderType === "sell"
-                ).sort(
-                    (a, b) => (a.price.toNumber() / DECIMALS_atlas < b.price.toNumber() / DECIMALS_atlas ? -1 : 1)
-                );
+            try {
+                assetSellOrder_USDC = (await gmClientService.getOpenOrdersForAsset(
+                    connection,
+                    assetMint[i],
+                    programId,
+                    )).filter(
+                        (order) => order.currencyMint === usdcTokenMint && order.orderType === "sell"
+                    ).sort(
+                        (a, b) => (a.price.toNumber() / DECIMALS_usdc < b.price.toNumber() / DECIMALS_usdc ? -1 : 1)
+                    );
+    
+                assetSellOrder_ATLAS = (await gmClientService.getOpenOrdersForAsset(
+                    connection,
+                    assetMint[i],
+                    programId,
+                    )).filter(
+                        (order) => order.currencyMint === atlasTokenMint && order.orderType === "sell"
+                    ).sort(
+                        (a, b) => (a.price.toNumber() / DECIMALS_atlas < b.price.toNumber() / DECIMALS_atlas ? -1 : 1)
+                    );
+            } catch {
+                if (multipleRPC_flag == 1) {
+                    notificationText_console = 'Unable to retrieve data through one of the RPC URLs provided (maybe max request for the RPC URL is reached?)...\nRemoving the RPC URL and skip retrieving...';
+                    notificationText_telegram = notificationText_console;
+
+                    console.log(notificationText_console);
+                    teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' });
+                    connections.splice(globalCounter % connections.length, 1);
+                    if (connections.length == 0) {
+                        notificationText_console = "Unable to retrieve data through the last RPC URL provided (maybe max request for the RPC URL is reached?)...\nExiting process...";
+                        notificationText_telegram = "Unable to retrieve data through the last RPC URL provided (maybe max request for the RPC URL is reached?)...\nStopping the bot...";
+                        
+                        console.log(notificationText_console);
+                        teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' });
+                        process.exit(0);
+                    }
+                } else {
+                    notificationText_console = "Unable to retrieve data through the RPC URL provided (maybe max request for the RPC URL is reached?)...\nExiting process...";
+                    notificationText_telegram = "Unable to retrieve data through the RPC URL provided (maybe max request for the RPC URL is reached?)...\nStopping the bot...";
+
+                    console.log(notificationText_console);
+                    teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' });
+                    process.exit(0);
+                }
+            }
 
             if (assetSellOrder_USDC.length > 0){
                 assetCheapest_USDC = assetSellOrder_USDC.splice(0, 1);
@@ -245,7 +298,7 @@ async function scan () {
         console.log(e);
         teleBot.telegram.sendMessage(chatID, "Error occurred when tracking the price...", { parse_mode: 'HTML' });
         teleBot.telegram.sendMessage(chatID, e, { parse_mode: 'HTML' });
-        process.exit(1);
+        process.exit(0);
     }
 }
 
