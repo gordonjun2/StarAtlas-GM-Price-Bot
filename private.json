@@ -1,5 +1,5 @@
 {
-  "rpcURL": "Your Solana RPC URL",
+  "rpcURL": "Your Solana RPC URL (can be in an array, eg. ['RPC 1', 'RPC 2', 'RPC 3', ...])",
   "cmcAPIKey":  "Your CoinMarketCap API Key",
   "teleAPIKey": "Your Telegram Bot API Key"
 }
