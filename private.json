@@ -1,0 +1,5 @@
+{
+  "rpcURL": "Your Solana RPC URL",
+  "cmcAPIKey":  "Your CoinMarketCap API Key",
+  "teleAPIKey": "Your Telegram Bot API Key"
+}

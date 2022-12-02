@@ -1,0 +1,32 @@
+{
+  "name": "star-atlas-assets-price-tracker",
+  "version": "1.0.0",
+  "description": "To check assets' price in Star Atlas Galactic Marketplace",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "gordonjun2",
+  "license": "ISC",
+  "dependencies": {
+    "@project-serum/anchor": "0.25.0",
+    "@project-serum/borsh": "0.2.5",
+    "@solana/spl-token": "0.3.5",
+    "@solana/web3.js": "1.62.1",
+    "@staratlas/factory": "0.4.4",
+    "axios": "^1.2.0",
+    "bn.js": "^5.2.1",
+    "bs58": "5.0.0",
+    "coinmarketcap-api": "^3.1.1",
+    "esbuild": "^0.15.10",
+    "minimist": "1.2.6",
+    "node-fetch": "2.6.7",
+    "prettier": "2.7.1",
+    "telegraf": "^3.38.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.6.3",
+    "typescript": "^4.7.4"
+  },
+  "type": "module"
+}

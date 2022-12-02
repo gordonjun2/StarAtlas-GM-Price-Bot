@@ -102,3 +102,6 @@ dist
 
 # TernJS port file
 .tern-port
+
+# Custom files
+private_DO_NOT_COMMIT.json
