@@ -5,7 +5,6 @@ import Telegraf from 'telegraf';
 import Markup from 'telegraf';
 import minimist from 'minimist';
 import fs from 'fs';
-import axios from 'axios';
 
 // Load in Solana RPC URLs and API keys
 var args = minimist(process.argv.slice(2));
@@ -26,8 +25,8 @@ const cmcAPIKey = privateInfo.cmcAPIKey;
 const teleAPIKey = privateInfo.teleAPIKey;
 
 // Solana RPC URL Settings
-// const connection_mainnet = "https://api.devnet.solana.com";
-// const connection_genesysgo = "https://ssc-dao.genesysgo.net/";
+// const connection_mainnet = "https://api.devnet.solana.com";          // example 1
+// const connection_genesysgo = "https://ssc-dao.genesysgo.net/";       // example 2
 
 var multipleRPC_flag = 0;
 
@@ -86,20 +85,28 @@ var allAssetInformation = await (await fetch("https://galaxy.staratlas.com/nfts"
 
 // Assets to track
 const tokenAddress = ['9zrgra3XQkZPt8XNs4fowbqmj7B8bBx76aEmsKSnm9BW', 'HzBx8PP86pyPrrboTHqPYWhxnEB5vXDHDBP8femWfPTS', 'HqPN13pLUVJRiuGSsKjfWZvGKAagK98PshuKu51bnG4E'];            // add tokens to track here
-var assetMint_address = new Array();
-var assetMint_key = new Array();
+// const tokenAddress = '9zrgra3XQkZPt8XNs4fowbqmj7B8bBx76aEmsKSnm9BW';            // add tokens to track here
 
 // Arrays creation
+var assetMint_address = new Array();
+var assetMint_key = new Array();
 var assetInformation = new Array();
 var assetCheapest_total_USDC_price_current = new Array();
 var assetCheapest_total_ATLAS_price_current = new Array();
-var tokenAddressLength = tokenAddress.length;
 
-// Runs when Telegram Bot /start and /modify
-for (var i = 0; i < tokenAddressLength; i++) {
-    assetMint_address.push(tokenAddress[i]);
-    assetMint_key.push(new PublicKey(tokenAddress[i]));
-    assetInformation.push(allAssetInformation.filter((nft) => nft.mint === tokenAddress[i]));
+if (Array.isArray(tokenAddress)) {
+    var tokenAddressLength = tokenAddress.length;
+    for (var i = 0; i < tokenAddressLength; i++) {
+        assetMint_address.push(tokenAddress[i]);
+        assetMint_key.push(new PublicKey(tokenAddress[i]));
+        assetInformation.push(allAssetInformation.filter((nft) => nft.mint === tokenAddress[i]));
+        assetCheapest_total_USDC_price_current.push(Infinity);
+        assetCheapest_total_ATLAS_price_current.push(Infinity);
+    }
+} else {
+    assetMint_address.push(tokenAddress);
+    assetMint_key.push(new PublicKey(tokenAddress));
+    assetInformation.push(allAssetInformation.filter((nft) => nft.mint === tokenAddress));
     assetCheapest_total_USDC_price_current.push(Infinity);
     assetCheapest_total_ATLAS_price_current.push(Infinity);
 }
@@ -113,6 +120,7 @@ try {
 }
 
 // Other variables
+var allAssetSellOrder;
 var assetSellOrder_USDC;
 var assetSellOrder_ATLAS;
 var assetCheapest_USDC;
@@ -246,146 +254,147 @@ async function scan () {
 
     assetMintLength = assetMint_address.length;
 
+    if (multipleRPC_flag == 1) {
+        connection = connections[globalCounter % connections.length];
+    }
+
     try {
-        for (var i = 0; i < assetMintLength; i++) {
+        allAssetSellOrder = (await gmClientService.getAllOpenOrders(
+            connection,
+            programId,
+            )).filter(
+                (order) => order.orderType === "sell"
+            );
 
-            assetCheapest_USDC = null;
-            assetCheapest_USDC_price = null;
-            assetCheapest_ATLAS = null;
-            assetCheapest_ATLAS_price = null;
-            assetCheapest_ATLAS_to_USDC_price = null;
-
-            if (multipleRPC_flag == 1) {
-                connection = connections[globalCounter % connections.length];
-            }
-
-            try {
-                assetSellOrder_USDC = (await gmClientService.getOpenOrdersForAsset(
-                    connection,
-                    assetMint_key[i],
-                    programId,
-                    )).filter(
-                        (order) => order.currencyMint === usdcTokenMint && order.orderType === "sell"
+        try {
+            for (var i = 0; i < assetMintLength; i++) {
+    
+                assetCheapest_USDC = null;
+                assetCheapest_USDC_price = null;
+                assetCheapest_ATLAS = null;
+                assetCheapest_ATLAS_price = null;
+                assetCheapest_ATLAS_to_USDC_price = null;
+    
+    
+                assetSellOrder_USDC = allAssetSellOrder.filter(
+                        (order) => order.currencyMint === usdcTokenMint && order.orderMint === assetMint_address[i]
                     ).sort(
                         (a, b) => (a.price.toNumber() / DECIMALS_usdc < b.price.toNumber() / DECIMALS_usdc ? -1 : 1)
                     );
     
-                assetSellOrder_ATLAS = (await gmClientService.getOpenOrdersForAsset(
-                    connection,
-                    assetMint_key[i],
-                    programId,
-                    )).filter(
-                        (order) => order.currencyMint === atlasTokenMint && order.orderType === "sell"
-                    ).sort(
-                        (a, b) => (a.price.toNumber() / DECIMALS_atlas < b.price.toNumber() / DECIMALS_atlas ? -1 : 1)
-                    );
-            } catch {
-                if (multipleRPC_flag == 1) {
-                    notificationText_console = 'Unable to retrieve data through one of the RPC URLs provided (maybe max request for the RPC URL is reached?)...\nRemoving the RPC URL and skip retrieving...';
-                    notificationText_telegram = notificationText_console;
-
-                    console.log(notificationText_console);
-                    teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' });
-                    connections.splice(globalCounter % connections.length, 1);
-                    if (connections.length == 0) {
-                        notificationText_console = "Unable to retrieve data through the last RPC URL provided (maybe max request for the RPC URL is reached?)...\nExiting process...";
-                        notificationText_telegram = "Unable to retrieve data through the last RPC URL provided (maybe max request for the RPC URL is reached?)...\nStopping the bot...";
-                        
+                assetSellOrder_ATLAS = allAssetSellOrder.filter(
+                    (order) => order.currencyMint === atlasTokenMint && order.orderMint === assetMint_address[i]
+                ).sort(
+                    (a, b) => (a.price.toNumber() / DECIMALS_atlas < b.price.toNumber() / DECIMALS_atlas ? -1 : 1)
+                );
+    
+    
+                if (assetSellOrder_USDC.length > 0){
+                    assetCheapest_USDC = assetSellOrder_USDC.splice(0, 1);
+                    assetCheapest_USDC_price = assetCheapest_USDC[0].price.toNumber() / DECIMALS_usdc;
+                }
+    
+                if (assetSellOrder_ATLAS.length > 0){
+                    assetCheapest_ATLAS = assetSellOrder_ATLAS.splice(0, 1);
+                    assetCheapest_ATLAS_price = assetCheapest_ATLAS[0].price.toNumber() / DECIMALS_atlas;
+                    assetCheapest_ATLAS_to_USDC_price = assetCheapest_ATLAS_price * atlasUSD;
+                }
+    
+                if (assetCheapest_USDC_price !== null && assetCheapest_ATLAS_to_USDC_price !== null){
+                    if (assetCheapest_USDC_price <= assetCheapest_ATLAS_to_USDC_price){
+                        assetCheapest_total_USDC_price = assetCheapest_USDC_price;
+                    } else {
+                        assetCheapest_total_USDC_price = assetCheapest_ATLAS_to_USDC_price;
+                    }
+                    assetCheapest_total_ATLAS_price = assetCheapest_total_USDC_price / atlasUSD;
+    
+                    if (assetCheapest_total_USDC_price != assetCheapest_total_USDC_price_current[i]){
+                        assetCheapest_total_USDC_price_current[i] = assetCheapest_total_USDC_price;
+                        assetCheapest_total_ATLAS_price_current[i] = assetCheapest_total_ATLAS_price;
+    
+                        notificationText_console = 'The new lowest price for ' + assetInformation[i][0]['name'] + ' is ' + String(assetCheapest_total_USDC_price) + ' USDC / ' + String(assetCheapest_total_ATLAS_price) + ' ATLAS.';
+                        notificationText_telegram = 'The new lowest price for <i>' + assetInformation[i][0]['name'] + '</i> is <b>' + String(assetCheapest_total_USDC_price) + ' USDC</b> / <b>' + String(assetCheapest_total_ATLAS_price) + ' ATLAS</b>.';
+        
                         console.log(notificationText_console);
                         teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' });
-                        process.exit(0);
                     }
-                    continue;
-                } else {
-                    notificationText_console = "Unable to retrieve data through the RPC URL provided (maybe max request for the RPC URL is reached?)...\nExiting process...";
-                    notificationText_telegram = "Unable to retrieve data through the RPC URL provided (maybe max request for the RPC URL is reached?)...\nStopping the bot...";
-
-                    console.log(notificationText_console);
-                    teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' });
-                    process.exit(0);
-                }
-            }
-
-            if (assetSellOrder_USDC.length > 0){
-                assetCheapest_USDC = assetSellOrder_USDC.splice(0, 1);
-                assetCheapest_USDC_price = assetCheapest_USDC[0].price.toNumber() / DECIMALS_usdc;
-            }
-
-            if (assetSellOrder_ATLAS.length > 0){
-                assetCheapest_ATLAS = assetSellOrder_ATLAS.splice(0, 1);
-                assetCheapest_ATLAS_price = assetCheapest_ATLAS[0].price.toNumber() / DECIMALS_atlas;
-                assetCheapest_ATLAS_to_USDC_price = assetCheapest_ATLAS_price * atlasUSD;
-            }
-
-            if (assetCheapest_USDC_price !== null && assetCheapest_ATLAS_to_USDC_price !== null){
-                if (assetCheapest_USDC_price <= assetCheapest_ATLAS_to_USDC_price){
+    
+                } else if (assetCheapest_USDC_price !== null && assetCheapest_ATLAS_to_USDC_price == null) {
                     assetCheapest_total_USDC_price = assetCheapest_USDC_price;
-                } else {
+                    assetCheapest_total_ATLAS_price = assetCheapest_total_USDC_price / atlasUSD;
+    
+                    if (assetCheapest_total_USDC_price != assetCheapest_total_USDC_price_current[i]){
+                        assetCheapest_total_USDC_price_current[i] = assetCheapest_total_USDC_price;
+                        assetCheapest_total_ATLAS_price_current[i] = assetCheapest_total_ATLAS_price;
+    
+                        notificationText_console = 'The new lowest price for ' + assetInformation[i][0]['name'] + ' is ' + String(assetCheapest_total_USDC_price) + ' USDC / ' + String(assetCheapest_total_ATLAS_price) + ' ATLAS.';
+                        notificationText_telegram = 'The new lowest price for <i>' + assetInformation[i][0]['name'] + '</i> is <b>' + String(assetCheapest_total_USDC_price) + ' USDC</b> / <b>' + String(assetCheapest_total_ATLAS_price) + ' ATLAS</b>.';
+        
+                        console.log(notificationText_console);
+                        teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' });
+                    }
+                } else if (assetCheapest_USDC_price == null && assetCheapest_ATLAS_to_USDC_price !== null){
                     assetCheapest_total_USDC_price = assetCheapest_ATLAS_to_USDC_price;
-                }
-                assetCheapest_total_ATLAS_price = assetCheapest_total_USDC_price / atlasUSD;
-
-                if (assetCheapest_total_USDC_price != assetCheapest_total_USDC_price_current[i]){
-                    assetCheapest_total_USDC_price_current[i] = assetCheapest_total_USDC_price;
-                    assetCheapest_total_ATLAS_price_current[i] = assetCheapest_total_ATLAS_price;
-
-                    notificationText_console = 'The new lowest price for ' + assetInformation[i][0]['name'] + ' is ' + String(assetCheapest_total_USDC_price) + ' USDC / ' + String(assetCheapest_total_ATLAS_price) + ' ATLAS.';
-                    notificationText_telegram = 'The new lowest price for <i>' + assetInformation[i][0]['name'] + '</i> is <b>' + String(assetCheapest_total_USDC_price) + ' USDC</b> / <b>' + String(assetCheapest_total_ATLAS_price) + ' ATLAS</b>.';
+                    assetCheapest_total_ATLAS_price = assetCheapest_total_USDC_price / atlasUSD;
     
-                    console.log(notificationText_console);
-                    teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' });
-                }
-
-            } else if (assetCheapest_USDC_price !== null && assetCheapest_ATLAS_to_USDC_price == null) {
-                assetCheapest_total_USDC_price = assetCheapest_USDC_price;
-                assetCheapest_total_ATLAS_price = assetCheapest_total_USDC_price / atlasUSD;
-
-                if (assetCheapest_total_USDC_price != assetCheapest_total_USDC_price_current[i]){
-                    assetCheapest_total_USDC_price_current[i] = assetCheapest_total_USDC_price;
-                    assetCheapest_total_ATLAS_price_current[i] = assetCheapest_total_ATLAS_price;
-
-                    notificationText_console = 'The new lowest price for ' + assetInformation[i][0]['name'] + ' is ' + String(assetCheapest_total_USDC_price) + ' USDC / ' + String(assetCheapest_total_ATLAS_price) + ' ATLAS.';
-                    notificationText_telegram = 'The new lowest price for <i>' + assetInformation[i][0]['name'] + '</i> is <b>' + String(assetCheapest_total_USDC_price) + ' USDC</b> / <b>' + String(assetCheapest_total_ATLAS_price) + ' ATLAS</b>.';
+                    if (assetCheapest_total_USDC_price != assetCheapest_total_USDC_price_current[i]){
+                        assetCheapest_total_USDC_price_current[i] = assetCheapest_total_USDC_price;
+                        assetCheapest_total_ATLAS_price_current[i] = assetCheapest_total_ATLAS_price;
     
-                    console.log(notificationText_console);
-                    teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' });
-                }
-            } else if (assetCheapest_USDC_price == null && assetCheapest_ATLAS_to_USDC_price !== null){
-                assetCheapest_total_USDC_price = assetCheapest_ATLAS_to_USDC_price;
-                assetCheapest_total_ATLAS_price = assetCheapest_total_USDC_price / atlasUSD;
-
-                if (assetCheapest_total_USDC_price != assetCheapest_total_USDC_price_current[i]){
-                    assetCheapest_total_USDC_price_current[i] = assetCheapest_total_USDC_price;
-                    assetCheapest_total_ATLAS_price_current[i] = assetCheapest_total_ATLAS_price;
-
-                    notificationText_console = 'The new lowest price for ' + assetInformation[i][0]['name'] + ' is ' + String(assetCheapest_total_USDC_price) + ' USDC / ' + String(assetCheapest_total_ATLAS_price) + ' ATLAS.';
-                    notificationText_telegram = 'The new lowest price for <i>' + assetInformation[i][0]['name'] + '</i> is <b>' + String(assetCheapest_total_USDC_price) + ' USDC</b> / <b>' + String(assetCheapest_total_ATLAS_price) + ' ATLAS</b>.';
+                        notificationText_console = 'The new lowest price for ' + assetInformation[i][0]['name'] + ' is ' + String(assetCheapest_total_USDC_price) + ' USDC / ' + String(assetCheapest_total_ATLAS_price) + ' ATLAS.';
+                        notificationText_telegram = 'The new lowest price for <i>' + assetInformation[i][0]['name'] + '</i> is <b>' + String(assetCheapest_total_USDC_price) + ' USDC</b> / <b>' + String(assetCheapest_total_ATLAS_price) + ' ATLAS</b>.';
+        
+                        console.log(notificationText_console);
+                        teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' });
+                    }
+                } else {
+                    assetCheapest_total_USDC_price = Infinity;
+                    assetCheapest_total_ATLAS_price = Infinity;
     
-                    console.log(notificationText_console);
-                    teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' });
-                }
-            } else {
-                assetCheapest_total_USDC_price = Infinity;
-                assetCheapest_total_ATLAS_price = Infinity;
-
-                if (assetCheapest_total_USDC_price != assetCheapest_total_USDC_price_current[i]){
-                    assetCheapest_total_USDC_price_current[i] = assetCheapest_total_USDC_price;
-                    assetCheapest_total_ATLAS_price_current[i] = assetCheapest_total_ATLAS_price;
-
-                    notificationText_console = 'No sell order for ' + assetInformation[i][0]['name'] + '...';
-                    notificationText_telegram = 'No sell order for <i>' + assetInformation[i][0]['name'] + '</i>...';
-
-                    console.log(notificationText_console);
-                    teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' })
+                    if (assetCheapest_total_USDC_price != assetCheapest_total_USDC_price_current[i]){
+                        assetCheapest_total_USDC_price_current[i] = assetCheapest_total_USDC_price;
+                        assetCheapest_total_ATLAS_price_current[i] = assetCheapest_total_ATLAS_price;
+    
+                        notificationText_console = 'No sell order for ' + assetInformation[i][0]['name'] + '...';
+                        notificationText_telegram = 'No sell order for <i>' + assetInformation[i][0]['name'] + '</i>...';
+    
+                        console.log(notificationText_console);
+                        teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' })
+                    }
                 }
             }
+        } catch (e) {
+            console.log("Error occurred when tracking the price...");
+            console.log(e);
+            teleBot.telegram.sendMessage(chatID, "Error occurred when tracking the price...", { parse_mode: 'HTML' });
+            teleBot.telegram.sendMessage(chatID, e, { parse_mode: 'HTML' });
+            process.exit(0);
         }
-    } catch (e) {
-        console.log("Error occurred when tracking the price...");
-        console.log(e);
-        teleBot.telegram.sendMessage(chatID, "Error occurred when tracking the price...", { parse_mode: 'HTML' });
-        teleBot.telegram.sendMessage(chatID, e, { parse_mode: 'HTML' });
-        process.exit(0);
+
+    } catch {
+        if (multipleRPC_flag == 1) {
+            notificationText_console = 'Unable to retrieve data through one of the RPC URLs provided (maybe max request for the RPC URL is reached?)...\nRemoving the RPC URL and skip retrieving...';
+            notificationText_telegram = 'Unable to retrieve data through one of the RPC URLs provided (maybe max request for the RPC URL is reached?)...\n\nRemoving the RPC URL and skip retrieving...';
+
+            console.log(notificationText_console);
+            teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' });
+            connections.splice(globalCounter % connections.length, 1);
+            if (connections.length == 0) {
+                notificationText_console = "Unable to retrieve data through the last RPC URL provided (maybe max request for the RPC URL is reached?)...\nExiting process...";
+                notificationText_telegram = "Unable to retrieve data through the last RPC URL provided (maybe max request for the RPC URL is reached?)...\n\nStopping the bot...";
+                
+                console.log(notificationText_console);
+                teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' });
+                process.exit(0);
+            }
+        } else {
+            notificationText_console = "Unable to retrieve data through the RPC URL provided (maybe max request for the RPC URL is reached?)...\nExiting process...";
+            notificationText_telegram = "Unable to retrieve data through the RPC URL provided (maybe max request for the RPC URL is reached?)...\n\nStopping the bot...";
+
+            console.log(notificationText_console);
+            teleBot.telegram.sendMessage(chatID, notificationText_telegram, { parse_mode: 'HTML' });
+            process.exit(0);
+        }
     }
 }
 
