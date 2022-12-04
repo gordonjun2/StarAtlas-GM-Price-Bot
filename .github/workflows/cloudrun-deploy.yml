@@ -26,7 +26,7 @@ jobs:
 
     env:
       # Replace $PROJECT_ID with your project ID
-      IMAGE_NAME: gcr.io/my-bots-service-account@my-bots-370507.iam.gserviceaccount.com/app
+      IMAGE_NAME: gcr.io/my-bots-370507/app
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
