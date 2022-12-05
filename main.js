@@ -5,6 +5,13 @@ import Telegraf from 'telegraf';
 import Markup from 'telegraf';
 import minimist from 'minimist';
 import fs from 'fs';
+import express from "express";
+
+// To listen at the stated port number (for Google Cloud Run)
+var app = express();
+app.listen(8080, () => {
+ console.log("Listening at port 8080...");
+});
 
 // Load in Solana RPC URLs and API keys
 var args = minimist(process.argv.slice(2));
