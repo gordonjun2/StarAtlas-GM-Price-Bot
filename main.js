@@ -415,14 +415,14 @@ process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 // Telegram Bot /start
-teleBot.start((ctx) => 
+teleBot.command('start', ctx => {
     ctx.reply("Hello! I am Star Atlas Galactic Marketplace Asset Price Tracker!\n\nPlease use <i><u>/help</u></i> to see the available commands and their description.", {parse_mode: 'HTML'})
     .then(() => chatID = ctx.chat.id)
     .then(() => listAssetTracked())
     .then(() => console.log('Tracker has started...'))
     .then(() => console.log('The chat ID in use is ' + String(chatID) + '.'))
     .then(() => begin_bot())
-);
+});
 
 // Telegram Bot /list
 teleBot.command('list', ctx => {
